@@ -27,7 +27,30 @@ class XposedEntry : IXposedHookLoadPackage {
     private fun hookClipboardServices(lpparam: XC_LoadPackage.LoadPackageParam) {
         val classClipboardService = XposedHelpers.findClass(" com.android.server.clipboard.ClipboardService", lpparam.classLoader)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            //  private boolean clipboardAccessAllowed(
+            //            int op,
+            //            String callingPackage,
+            //            String attributionTag,
+            //            int uid,
+            //            @UserIdInt int userId,
+            //            int intendingDeviceId,
+            //            boolean shouldNoteOp)
+            XposedHelpers.findAndHookMethod(classClipboardService, "clipboardAccessAllowed", Int::class.java, String::class.java, String::class.java, Int::class.java, Int::class.java, Int::class.java,Boolean::class.java, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val allowed = clipboardAccessAllowed(
+                        XposedHelpers.getObjectField(param.thisObject, "mAppOps") as AppOpsManager,
+                        param.args[0] as Int,
+                        param.args[1] as String,
+                        param.args[3] as Int
+                    )
+
+                    if (allowed) {
+                        param.result = true
+                    }
+                }
+            })
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             //boolean clipboardAccessAllowed(int op, String callingPackage, String attributionTag, int uid, @UserIdInt int userId, int intendingDeviceId)
             XposedHelpers.findAndHookMethod(classClipboardService, "clipboardAccessAllowed", Int::class.java, String::class.java, String::class.java, Int::class.java, Int::class.java, Int::class.java, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
