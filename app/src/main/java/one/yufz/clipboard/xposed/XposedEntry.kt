@@ -25,24 +25,46 @@ class XposedEntry : IXposedHookLoadPackage {
     }
 
     private fun hookClipboardServices(lpparam: XC_LoadPackage.LoadPackageParam) {
-        val classClipboardService = XposedHelpers.findClass("com.android.server.clipboard.ClipboardService", lpparam.classLoader)
+        val classClipboardService = XposedHelpers.findClass(
+            "com.android.server.clipboard.ClipboardService",
+            lpparam.classLoader
+        )
+
+        // Samsung-specific: suppress clipboard access notification for whitelisted apps
+        try {
+            XposedHelpers.findAndHookMethod(
+                classClipboardService,
+                "showAccessNotificationLocked",
+                String::class.java,    // callingPackage (str)
+                Int::class.java,       // callerUid (i)
+                Int::class.java,       // userId (i2)
+                XposedHelpers.findClass(
+                    "com.android.server.clipboard.PerUserClipboard",
+                    lpparam.classLoader
+                ), // perUserClipboard
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val pkgName = param.args[0] as String
+                        prefs.reload()
+                        if (prefs.getBoolean(pkgName, false)) {
+                            Log.d(TAG, "Suppressing Samsung clipboard notification for $pkgName")
+                            param.result = null // Prevent notification from being shown
+                        }
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            // Ignore if method doesn't exist
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             // OneUI 7 and Samsung devices may change this method signature
-            // Example signatures:
-            // public final boolean clipboardAccessAllowed(
-            //     int op,
-            //     int uid,
-            //     int userId,
-            //     int intendingDeviceId,
-            //     String pkg,
-            //     String attributionTag,
-            //     boolean shouldNoteOp)
             try {
                 XposedHelpers.findAndHookMethod(
                     classClipboardService,
                     "clipboardAccessAllowed",
-                    Int::class.java, Int::class.java, Int::class.java, Int::class.java, String::class.java, String::class.java, Boolean::class.java,
+                    Int::class.java, Int::class.java, Int::class.java, Int::class.java,
+                    String::class.java, String::class.java, Boolean::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
                             val allowed = clipboardAccessAllowed(
@@ -60,20 +82,12 @@ class XposedEntry : IXposedHookLoadPackage {
             } catch (t: Throwable) {
                 // ignore
             }
-            // Another possible Samsung signature:
-            // private boolean clipboardAccessAllowed(
-            //     int op,
-            //     String callingPackage,
-            //     String attributionTag,
-            //     int uid,
-            //     @UserIdInt int userId,
-            //     int intendingDeviceId,
-            //     boolean shouldNoteOp)
             try {
                 XposedHelpers.findAndHookMethod(
                     classClipboardService,
                     "clipboardAccessAllowed",
-                    Int::class.java, String::class.java, String::class.java, Int::class.java, Int::class.java, Int::class.java, Boolean::class.java,
+                    Int::class.java, String::class.java, String::class.java, Int::class.java,
+                    Int::class.java, Int::class.java, Boolean::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
                             val allowed = clipboardAccessAllowed(
@@ -92,12 +106,11 @@ class XposedEntry : IXposedHookLoadPackage {
                 // ignore
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ (API 33+): 6-parameter signature
-            // boolean clipboardAccessAllowed(int op, String callingPackage, String attributionTag, int uid, @UserIdInt int userId, int intendingDeviceId)
             XposedHelpers.findAndHookMethod(
                 classClipboardService,
                 "clipboardAccessAllowed",
-                Int::class.java, String::class.java, String::class.java, Int::class.java, Int::class.java, Int::class.java,
+                Int::class.java, String::class.java, String::class.java, Int::class.java,
+                Int::class.java, Int::class.java,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val allowed = clipboardAccessAllowed(
@@ -113,9 +126,6 @@ class XposedEntry : IXposedHookLoadPackage {
                 }
             )
         } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.S) {
-            // Android 12 (API 31): 5-parameter and 4-parameter signatures
-
-            // 5-parameter: clipboardAccessAllowed(int op, String callingPackage, int uid, int userId, boolean shouldNoteOp)
             XposedHelpers.findAndHookMethod(
                 classClipboardService,
                 "clipboardAccessAllowed",
@@ -135,8 +145,6 @@ class XposedEntry : IXposedHookLoadPackage {
                 }
             )
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10/11 (Q/R): 4-parameter signature
-            // boolean clipboardAccessAllowed(int op, String callingPackage, int uid, @UserIdInt int userId)
             XposedHelpers.findAndHookMethod(
                 classClipboardService,
                 "clipboardAccessAllowed",
@@ -158,7 +166,12 @@ class XposedEntry : IXposedHookLoadPackage {
         }
     }
 
-    private fun clipboardAccessAllowed(appOps: AppOpsManager, op: Int, pkgName: String, uid: Int): Boolean {
+    private fun clipboardAccessAllowed(
+        appOps: AppOpsManager,
+        op: Int,
+        pkgName: String,
+        uid: Int
+    ): Boolean {
         try {
             appOps.checkPackage(uid, pkgName)
         } catch (t: Throwable) {
