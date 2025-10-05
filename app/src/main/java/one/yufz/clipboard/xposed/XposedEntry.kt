@@ -34,25 +34,23 @@ class XposedEntry : IXposedHookLoadPackage {
         try {
             XposedHelpers.findAndHookMethod(
                 classClipboardService,
-                "showAccessNotificationLocked",
-                String::class.java,    // str (calling package)
-                Int::class.java,       // i (caller UID)
-                Int::class.java,       // i2 (user ID)
-                "com.android.server.clipboard.ClipboardService$PerUserClipboard", lpparam.classLoader), // perUserClipboard
+                "lambda\$showAccessNotificationLocked$4\$ClipboardService",
+                String::class.java,
+                Int::class.java,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val pkgName = param.args[0] as String
                         prefs.reload()
-                        Log.d(TAG, "showAccessNotificationLocked called for $pkgName") // Debug log
+                        Log.d(TAG, "lambda\$showAccessNotificationLocked$4\$ClipboardService called for $pkgName")
                         if (prefs.getBoolean(pkgName, false)) {
-                            Log.d(TAG, "Suppressing Samsung clipboard notification for $pkgName")
-                            param.setResult(null) // Prevent notification from being shown
+                            Log.d(TAG, "Suppressing Samsung clipboard notification toast for $pkgName")
+                            param.result = null
                         }
                     }
                 }
             )
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to hook showAccessNotificationLocked", t)
+            Log.e(TAG, "Failed to hook lambda\$showAccessNotificationLocked$4\$ClipboardService", t)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
